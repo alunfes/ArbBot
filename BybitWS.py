@@ -29,6 +29,7 @@ class BybitWS:
     def __add_snapshot(self, bid_snap, ask_snap):
         new_bids = {float(price): float(size) for price, size in bid_snap[:self.num_recording_boards]}
         new_asks =  {float(price): float(size) for price, size in ask_snap[:self.num_recording_boards]}
+        
         if self.bids != new_bids or self.asks != new_asks:
             self.bids = {}
             self.bids = {float(price): float(size) for price, size in bid_snap[:self.num_recording_boards]}
