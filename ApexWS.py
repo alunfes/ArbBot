@@ -1,5 +1,6 @@
 import asyncio
 import copy
+import threading
 
 from apexpro.constants import APEX_WS_MAIN
 from apexpro.websocket_api import WebSocket
@@ -8,16 +9,89 @@ from ApexAPI import ApexAPI
 from DisplaySystemMessage import DisplaySystemMessage
 
 
+class ApexWSDataConverter:
+    def __init__(self, symbol, target_base_currencies, num_recording_boards) -> None:
+        self.target_base_currencies = target_base_currencies
+        self.num_recording_boards = num_recording_boards
+        self.symbol = symbol
+        self._bids = {}
+        self._asks = {}
+        self._lock = threading.RLock()
+
+    @property
+    def bids(self):
+        with self._lock:
+            return self._bids
+
+    @bids.setter
+    def bids(self, new_value):
+        with self._lock:
+            self._bids = new_value
+
+    @property
+    def asks(self):
+        with self._lock:
+            return self._asks
+
+    @asks.setter
+    def asks(self, new_value):
+        with self._lock:
+            self._asks = new_value
+
+    def add_snapshot(self, bid_snap, ask_snap):
+        tmp_bids = {float(price): float(size) for price, size in bid_snap}
+        tmp_asks = {float(price): float(size) for price, size in ask_snap}
+        tmp_bids = sorted(tmp_bids.items(), key=lambda x: x[0], reverse=True)  # bidsを価格が高い順にソート
+        tmp_asks = sorted(tmp_asks.items())  # asksは価格が低い順にソート
+        #bids, asksをそれぞれ3番目までのデータのみを残す。
+        tmp_bids = dict(tmp_bids[:self.num_recording_boards])
+        tmp_asks = dict(tmp_asks[:self.num_recording_boards])
+        flg = False
+        bids = self.bids
+        if tmp_bids != bids:
+            self.bids = tmp_bids.copy()
+            flg = True
+        asks = self.asks
+        if tmp_asks != asks:
+            self.asks = tmp_asks.copy()
+            flg = True
+        return flg
+
+
+    def add_delta(self, delta_bids, delta_asks):
+        flg = False
+        if len(delta_bids) > 0:
+            tmp_bids = self.bids.copy()
+            delta_bids = {float(price):float(size) for price, size in delta_bids}
+            tmp_bids.update(delta_bids)
+            tmp_bids = {price:size for price, size in tmp_bids.items() if size >0}
+            tmp_bids = sorted(tmp_bids.items(), key=lambda x: x[0], reverse=True)
+            tmp_bids = dict(tmp_bids[:self.num_recording_boards])
+            if tmp_bids != self.bids:
+                self.bids = tmp_bids.copy()
+                flg = True
+        if len(delta_asks) > 0:
+            tmp_asks = self.asks.copy()
+            delta_asks = {float(price):float(size) for price, size in delta_asks}
+            tmp_asks.update(delta_asks)
+            tmp_asks = {price:size for price, size in tmp_asks.items() if size >0}
+            tmp_asks = sorted(tmp_asks.items())  # asksは価格が低い順にソート
+            tmp_asks = dict(tmp_asks[:self.num_recording_boards])
+            if tmp_asks != self.bids:
+                self.asks = tmp_asks.copy()
+                flg = True
+        return flg
+
+
 
 class ApexWS:
     def __init__(self, target_base_currencies, num_recording_boards) -> None:
+        self.ws = WebSocket(endpoint=APEX_WS_MAIN)
         self.target_base_currencies = target_base_currencies
         self.num_recording_boards = num_recording_boards
-        self.key = ''
-        self.ws = WebSocket(endpoint=APEX_WS_MAIN)
+        self.data_converters = {} #symbol:class_instance
         self.symbols = []
-        self.bids = {}
-        self.asks = {}
+
     
 
     def callback_trade(self, message):
@@ -42,61 +116,22 @@ class ApexWS:
         symbol = message['data']['s']
         if symbol not in self.symbols:
             self.symbols.append(symbol)
+            self.data_converters[symbol] = ApexWSDataConverter(symbol, self.target_base_currencies, self.num_recording_boards)
         if message['type'] == 'snapshot':
-            flg = self.__add_snapshot(message['data']['b'], message['data']['a'])
+            flg = self.data_converters[symbol].add_snapshot(message['data']['b'].copy(), message['data']['a'].copy())
             if flg:
-                OrderobookDataList.add_data('apex', symbol, self.bids, self.asks, message['ts'])
+                OrderobookDataList.add_data('apex', symbol, self.data_converters[symbol].bids.copy(), self.data_converters[symbol].asks.copy(), message['ts'])
         elif message['type'] == 'delta':
-            self.__add_delta(message['data']['b'], message['data']['a'])
-            OrderobookDataList.add_data('apex', symbol, self.bids, self.asks, message['ts'])
+            flg = self.data_converters[symbol].add_delta(message['data']['b'].copy(), message['data']['a'].copy())
+            if flg:
+                OrderobookDataList.add_data('apex', symbol, self.data_converters[symbol].bids.copy(), self.data_converters[symbol].asks.copy(), message['ts'])
         else:
             DisplaySystemMessage.display_error('ApexWS', 'Invalid ws type in Apex!' + '\r\n'+ 'type='+message['type'])
             
-        
+
+
     
-    def __add_snapshot(self, bid_snap, ask_snap):
-        bids = {float(price): float(size) for price, size in bid_snap}
-        asks = {float(price): float(size) for price, size in ask_snap}
-        bids = sorted(bids.items(), key=lambda x: x[0], reverse=True)  # bidsを価格が高い順にソート
-        asks = sorted(asks.items())  # asksは価格が低い順にソート
-        #bids, asksをそれぞれ3番目までのデータのみを残す。
-        bids = dict(bids[:self.num_recording_boards])
-        asks = dict(asks[:self.num_recording_boards])
-        flg = False
-        if bids != self.bids:
-            self.bids = self.bids.copy.deepcopy()
-            flg = True
-        if asks != self.asks:
-            self.asks = self.asks.copy.deepcopy()
-            flg = True
-        return flg
-        
 
-
-    def __add_delta(self, delta_bids, delta_asks):
-        for price_str, size_str in delta_bids:
-            price = float(price_str)
-            size = float(size_str)
-            # sizeが0なら、その価格の注文を削除
-            if size == 0:
-                self.bids.pop(price, None)
-            # そうでない場合は、bidsを更新 (新しい価格の場合は追加)
-            else:
-                self.bids[price] = size
-        for price_str, size_str in delta_asks:
-            price = float(price_str)
-            size = float(size_str)
-            # sizeが0なら、その価格の注文を削除
-            if size == 0:
-                self.asks.pop(price, None)
-            # そうでない場合は、bidsを更新 (新しい価格の場合は追加)
-            else:
-                self.asks[price] = size
-        self.bids = sorted(self.bids.items(), key=lambda x: x[0], reverse=True)  # bidsを価格が高い順にソート
-        self.asks = sorted(self.asks.items())  # asksは価格が低い順にソート
-        self.bids = dict(self.bids[:self.num_recording_boards])
-        self.asks = dict(self.asks[:self.num_recording_boards])
-        
 
 
     async def get_all_tickers(self):

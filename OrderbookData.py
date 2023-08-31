@@ -1,10 +1,11 @@
 import threading
 import pandas as pd
+import asyncio
 
 
 class OrderbookData:
     def __init__(self, ex_name, symbol_name) -> None:
-        self.max_data_size = 100
+        self.max_data_size = 50
         self.num_recording_boards = 5
         self.ex_name = ex_name
         self.symbol_name = symbol_name
@@ -12,7 +13,15 @@ class OrderbookData:
         self.asks = {} #price:size
         self.bids_log = {} #ts:bids
         self.asks_log = {} #ts:asks
+        self.flg_created_file = False
         
+
+    def fire_and_forget(func):
+        def wrapper(*args, **kwargs):
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            return loop.run_in_executor(None, func, *args, *kwargs)
+        return wrapper
 
     def add_data(self, bids, asks, ts):
         self.bids = bids
@@ -20,29 +29,37 @@ class OrderbookData:
         self.bids_log[ts] = bids
         self.asks_log[ts] = asks
         if len(self.bids_log) >= self.max_data_size:
-            self.__write_data()
+            self.__write_data(self.bids_log.copy(), self.asks_log.copy())
             self.bids_log = {}
             self.asks_log = {}
     
-    def __write_data(self):
+    @fire_and_forget
+    def __write_data(self, bids_log, asks_log):
         # bidsとasksの各tsのnum_recording_boards板分をDataFrameに保存
-        df_bids = pd.DataFrame({ts: bids[:self.num_recording_boards] for ts, bids in self.bids_log.items()}).T
-        df_asks = pd.DataFrame({ts: asks[:self.num_recording_boards] for ts, asks in self.asks_log.items()}).T
+        rows = []
+        for timestamp, values in bids_log.items():
+            row = {'ts': timestamp}
+            for i, (price, size) in enumerate(values.items(), start=1):
+                row[f'bid_price{i}'] = price
+                row[f'bid_size{i}'] = size
+            rows.append(row)
+        df_bids = pd.DataFrame(rows)
+        rows = []
+        for timestamp, values in asks_log.items():
+            row = {'ts': timestamp}
+            for i, (price, size) in enumerate(values.items(), start=1):
+                row[f'ask_price{i}'] = price
+                row[f'ask_size{i}'] = size
+            rows.append(row)
+        df_asks = pd.DataFrame(rows)
         # Convert to the improved format
-        df_combined = pd.DataFrame(index=df_bids.index)
-        for i in range(self.num_recording_boards):
-            df_combined[f'bid{i}_price'] = df_bids[i].apply(lambda x: x[0] if pd.notnull(x) else None)
-            df_combined[f'bid{i}_volume'] = df_bids[i].apply(lambda x: x[1] if pd.notnull(x) else None)
-            df_combined[f'ask{i}_price'] = df_asks[i].apply(lambda x: x[0] if pd.notnull(x) else None)
-            df_combined[f'ask{i}_volume'] = df_asks[i].apply(lambda x: x[1] if pd.notnull(x) else None)
+        df_combined = pd.concat([df_bids, df_asks], axis=1)
         # Write to CSV
-        df_combined.index.name = 'ts'
-        mode = 'a' if self.flg_created_file else 'w'
-        header = not self.flg_created_file
-        df_combined.to_csv(f'Data/depth/{self.ex_name}_{self.symbol}_depth.csv', mode=mode, header=header)
-        if not self.flg_created_file:
+        if self.flg_created_file:
+            df_combined.to_csv(f'Data/depth/{self.ex_name}_{self.symbol_name}_depth.csv', mode='a', header=False)
+        else:
+            df_combined.to_csv(f'Data/depth/{self.ex_name}_{self.symbol_name}_depth.csv')
             self.flg_created_file = True
-
 
 
 class OrderobookDataList:

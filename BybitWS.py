@@ -1,4 +1,5 @@
 import asyncio
+import threading
 import pandas as pd
 
 from pybit.unified_trading import WebSocket
@@ -7,40 +8,69 @@ from OrderbookData import OrderobookDataList
 from DisplaySystemMessage import DisplaySystemMessage
 
 
+
+class BybitWSDataConverter:
+    def __init__(self, symbol, target_base_currencies, num_recording_boards) -> None:
+        self.target_base_currencies = target_base_currencies
+        self.num_recording_boards = num_recording_boards
+        self.key = ''
+        self.symbol = symbol
+        self._bids = {}
+        self._asks = {}
+        self._lock = threading.RLock()
+
+    @property
+    def bids(self):
+        with self._lock:
+            return self._bids
+
+    @bids.setter
+    def bids(self, new_value):
+        with self._lock:
+            self._bids = new_value
+
+    @property
+    def asks(self):
+        with self._lock:
+            return self._asks
+
+    @asks.setter
+    def asks(self, new_value):
+        with self._lock:
+            self._asks = new_value
+        
+
+    def add_snapshot(self, bid_snap, ask_snap):
+        tmp_bids = {float(price): float(size) for price, size in bid_snap}
+        tmp_asks = {float(price): float(size) for price, size in ask_snap}
+        tmp_bids = sorted(tmp_bids.items(), key=lambda x: x[0], reverse=True)  # bidsを価格が高い順にソート
+        tmp_asks = sorted(tmp_asks.items())  # asksは価格が低い順にソート
+        #bids, asksをそれぞれ3番目までのデータのみを残す。
+        tmp_bids = dict(tmp_bids[:self.num_recording_boards])
+        tmp_asks = dict(tmp_asks[:self.num_recording_boards])
+        flg = False
+        bids = self.bids
+        if tmp_bids != bids:
+            self.bids = tmp_bids.copy()
+            flg = True
+        asks = self.asks
+        if tmp_asks != asks:
+            self.asks = tmp_asks.copy()
+            flg = True
+        return flg
+    
+
 class BybitWS:
     def __init__(self, target_base_currencies, num_recording_boards) -> None:
         self.ws = WebSocket(
             testnet=False,
             channel_type="linear"
             )
+        self.symbols = []
         self.target_base_currencies = target_base_currencies
         self.num_recording_boards = num_recording_boards
-        self.key = ''
-        self.symbols = []
-        self.bids = {}
-        self.asks = {}
+        self.data_converters = {} #symbol:class_instance
     
-    def __callback_trade(self, message):
-        '''
-        {'topic': 'publicTrade.BTCUSDT', 'type': 'snapshot', 'ts': 1692276093693, 'data': [{'T': 1692276093692, 's': 'BTCUSDT', 'S': 'Buy', 'v': '0.705', 'p': '28552.00', 'L': 'ZeroPlusTick', 'i': '70876f5b-1eb1-5348-8e2f-430adaec3c4b', 'BT': False}, {'T': 1692276093692, 's': 'BTCUSDT', 'S': 'Buy', 'v': '0.442', 'p': '28552.00', 'L': 'ZeroPlusTick', 'i': 'ffdd97de-7ff0-5b60-8618-52ad46931524', 'BT': False}, {'T': 1692276093692, 's': 'BTCUSDT', 'S': 'Buy', 'v': '0.455', 'p': '28552.00', 'L': 'ZeroPlusTick', 'i': 'fbfbd323-3d7c-556b-a6d3-ba63e6b70caa', 'BT': False}]}
-        '''
-        pass
-    
-    def __add_snapshot(self, bid_snap, ask_snap):
-        new_bids = {float(price): float(size) for price, size in bid_snap[:self.num_recording_boards]}
-        new_asks =  {float(price): float(size) for price, size in ask_snap[:self.num_recording_boards]}
-        
-        if self.bids != new_bids or self.asks != new_asks:
-            self.bids = {}
-            self.bids = {float(price): float(size) for price, size in bid_snap[:self.num_recording_boards]}
-            self.asks = {}
-            self.asks = {float(price): float(size) for price, size in ask_snap[:self.num_recording_boards]}
-            self.bids = sorted(self.bids.items(), key=lambda x: x[0], reverse=True)  # bidsを価格が高い順にソート
-            self.asks = sorted(self.asks.items())  # asksは価格が低い順にソート
-            #bids, asksをそれぞれ3番目までのデータのみを残す。
-            self.bids = dict(self.bids[:self.num_recording_boards])
-            self.asks = dict(self.asks[:self.num_recording_boards])
-
 
     def __callback_depth(self, message):
         '''
@@ -50,11 +80,13 @@ class BybitWS:
         if symbol not in self.symbols:
             self.symbols.append(symbol)
         if message['type'] == 'snapshot':
-            self.__add_snapshot(message['data']['b'], message['data']['a'])
-            OrderobookDataList.add_data('bybit', symbol, self.bids, self.asks, message['ts'])
+            flg = self.data_converters[symbol].add_snapshot(message['data']['b'], message['data']['a'])
+            if flg:
+                OrderobookDataList.add_data('bybit', symbol, self.data_converters[symbol].bids.copy(), self.data_converters[symbol].asks.copy(), message['ts'])
         elif message['type'] == 'delta':
-            self.__add_delta(message['data']['b'], message['data']['a'])
-            OrderobookDataList.add_data('bybit', symbol, self.bids, self.asks, message['ts'])
+            #self.__add_delta(message['data']['b'], message['data']['a'])
+            #OrderobookDataList.add_data('bybit', symbol, self.bids.copy(), self.asks.copy(), message['ts'])
+            pass
         else:
             DisplaySystemMessage.display_error('BybitWS', 'Invalid ws type in Bybit!' + '\r\n'+ 'type='+message['type'])
         
@@ -67,6 +99,7 @@ class BybitWS:
                 #self.ws.trade_stream(self.callback_trade, symbol)
                 self.ws.orderbook_stream(50, symbol, self.__callback_depth)
                 OrderobookDataList.setup_new_ex_symbol('bybit', symbol)
+                self.data_converters[symbol] = BybitWSDataConverter(symbol, self.target_base_currencies, self.num_recording_boards)
         while True:
             await asyncio.sleep(0.1)
 
