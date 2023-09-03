@@ -100,6 +100,10 @@ class BybitWS:
                 self.ws.orderbook_stream(50, symbol, self.__callback_depth)
                 OrderobookDataList.setup_new_ex_symbol('bybit', symbol)
                 self.data_converters[symbol] = BybitWSDataConverter(symbol, self.target_base_currencies, self.num_recording_boards)
+        #USDT/USDCは必ず取得の対象にする。
+        self.ws.orderbook_stream(50, 'USDCUSDT', self.__callback_depth)
+        OrderobookDataList.setup_new_ex_symbol('bybit', 'USDCUSDT')
+        self.data_converters['USDCUSDT'] = BybitWSDataConverter('USDCUSDT', self.target_base_currencies, self.num_recording_boards)
         while True:
             await asyncio.sleep(0.1)
 

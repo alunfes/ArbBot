@@ -8,7 +8,7 @@ from BybitWS import BybitWS
 from ApexAPI import ApexAPI
 from BybitAPI import BybitAPI
 from Bot import Bot
-
+from Params import Params
 
 class Application:
     def __init__(self, target_ex_names):
@@ -17,20 +17,19 @@ class Application:
         
         
     async def start(self):
+        Params.initialize()
         OrderobookDataList.initialize()
         await self.__get_all_tickers()
         target_base_currencies = self.__detect_common_target_tickers(self.all_tickers.copy())
         #generate ws for target ex
         ws_instances = []
-        ex_ws_funcs = {'apex':ApexWS(), 'bybit':BybitWS()}
-        ws_tasks = [ex_ws_funcs(ex).start(target_base_currencies, 3) for ex in self.target_ex_names]
+        ex_ws_funcs = {'apex':ApexWS(target_base_currencies, 5), 'bybit':BybitWS(target_base_currencies, 5)}
+        ws_tasks = [ex_ws_funcs[ex].start() for ex in self.target_ex_names]
         bot = Bot()
         await asyncio.gather(
             *ws_tasks,
             bot.start(),
             )
-
-
 
 
 

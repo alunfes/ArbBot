@@ -32,6 +32,10 @@ class OrderbookData:
             self.__write_data(self.bids_log.copy(), self.asks_log.copy())
             self.bids_log = {}
             self.asks_log = {}
+
+    def get_data(self):
+        return {'bids':self.bids.copy(), 'asks':self.asks.copy()}
+    
     
     @fire_and_forget
     def __write_data(self, bids_log, asks_log):
@@ -69,7 +73,11 @@ class OrderobookDataList:
         一番最初に一回だけ実行
         '''
         cls.orderbook_data_list = {} #ex_name-symbol_name:
+        cls.ex_names = []
+        cls.symbol_names = {}#ex_name:symbol_list
+        cls._locks = {} #ex-symbol:lock,   dictキーにアクセスする時間がかかるけどlockは個別の変数ごとに並列ができる。
         cls.lock = threading.RLock()
+
 
     @classmethod
     def setup_new_ex_symbol(cls, ex_name, symbol_name):
@@ -78,18 +86,40 @@ class OrderobookDataList:
         '''
         with cls.lock:
             cls.orderbook_data_list[ex_name+'-'+symbol_name] = OrderbookData(ex_name, symbol_name)
-
+            if ex_name not in cls.ex_names:
+                cls.ex_names.append(ex_name)
+                cls.symbol_names[ex_name] = [symbol_name]
+                cls._locks[ex_name+'-'+symbol_name] = threading.RLock()
+            else:
+                cls.symbol_names[ex_name].append(symbol_name)
+                cls._locks[ex_name+'-'+symbol_name] = threading.RLock()
+            
     @classmethod
     def add_data(cls, ex_name, symbol_name, bids, asks, ts):
-        with cls.lock:
+        #with cls.lock:
+        with cls._locks[ex_name+'-'+symbol_name]:
             cls.orderbook_data_list[ex_name+'-'+symbol_name].add_data(bids, asks, ts)
             print(bids)
             print(asks)
     
     @classmethod
-    def get_all_data(cls):
+    def get_latest_data(cls, ex_name, symbol_name):
+        #with cls.lock:
+        with cls._locks[ex_name+'-'+symbol_name]:
+            return cls.orderbook_data_list[ex_name+'-'+symbol_name].get_data()
+        
+    @classmethod
+    def get_ex_names(cls):
         with cls.lock:
-            return cls.orderbook_data_list.copy()
+            return cls.ex_names.copy()
+    
+    @classmethod
+    def get_symbols(cls, ex_name):
+        with cls.lock:
+            return cls.symbol_names[ex_name].copy()
+        
+    
+
     
 
         
