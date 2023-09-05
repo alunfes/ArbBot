@@ -99,8 +99,8 @@ class OrderobookDataList:
         #with cls.lock:
         with cls._locks[ex_name+'-'+symbol_name]:
             cls.orderbook_data_list[ex_name+'-'+symbol_name].add_data(bids, asks, ts)
-            print(bids)
-            print(asks)
+            #print(bids)
+            #print(asks)
     
     @classmethod
     def get_latest_data(cls, ex_name, symbol_name):

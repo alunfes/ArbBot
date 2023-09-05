@@ -9,6 +9,7 @@ from ApexAPI import ApexAPI
 from BybitAPI import BybitAPI
 from Bot import Bot
 from Params import Params
+from PriceGapCalculator import PriceGapCalculator
 
 class Application:
     def __init__(self, target_ex_names):
@@ -26,9 +27,11 @@ class Application:
         ex_ws_funcs = {'apex':ApexWS(target_base_currencies, 5), 'bybit':BybitWS(target_base_currencies, 5)}
         ws_tasks = [ex_ws_funcs[ex].start() for ex in self.target_ex_names]
         bot = Bot()
+        price_gap_calculator = PriceGapCalculator()
         await asyncio.gather(
             *ws_tasks,
             bot.start(),
+            price_gap_calculator.start()
             )
 
 

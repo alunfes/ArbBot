@@ -60,17 +60,23 @@ class ApexAPI:
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as resp:
                 resp = await resp.json()
+                tickers = []
                 for ticker in resp['data']["perpetualContract"]:
                     if ticker["enableTrade"]:
-                        symbols.append(ticker['crossSymbolName'])
-                        base_currency.append(ticker['underlyingCurrencyId'])
-                        quote_currency.append(ticker['settleCurrencyId'])
+                        tickers.append(ticker)
+                sorted_tickers = sorted(tickers, key=lambda x: x['crossSymbolName'])
+                for ticker in sorted_tickers:
+                    symbols.append(ticker['crossSymbolName'])
+                    base_currency.append(ticker['underlyingCurrencyId'])
+                    quote_currency.append(ticker['settleCurrencyId'])
         return {'symbols':symbols, 'base_currency':base_currency, 'quote_currency':quote_currency}
 
 
 
 if __name__ == '__main__':
     apex = ApexAPI()
-    ohlc = asyncio.run(apex.get_klines('BCHUSDC', int(time.time()-60 * 120), int(time.time()), 1))
-    df = pd.DataFrame(ohlc)
+    tickers = asyncio.run(apex.get_tickers())
+    df = pd.DataFrame(tickers)
+    #ohlc = asyncio.run(apex.get_klines('BCHUSDC', int(time.time()-60 * 120), int(time.time()), 1))
+    #df = pd.DataFrame(ohlc)
     print(df)

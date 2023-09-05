@@ -20,18 +20,23 @@ class BybitAPI:
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as resp:
                 resp = await resp.json()
+                tickers = []
                 for details in resp['result']['list']:
                     if details['status'] == 'Trading' and details['quoteCoin'] == 'USDT':
-                        symbols.append(details['symbol'])
-                        base_currency.append(details['baseCoin'])
-                        quote_currency.append('USDT')
+                        tickers.append(details)    
+                sorted_tickers = sorted(tickers, key=lambda x: x['symbol'])
+                for ticker in sorted_tickers:
+                    symbols.append(ticker['symbol'])
+                    base_currency.append(ticker['baseCoin'])
+                    quote_currency.append('USDT')
         return {'symbols':symbols, 'base_currency':base_currency, 'quote_currency':quote_currency}
 
 
 
 
 if __name__ == '__main__':
-    apex = BybitAPI()
-    tickers = asyncio.run(apex.get_tickers())
+    bybit = BybitAPI()
+    tickers=asyncio.run(bybit.get_tickers())
+    #tickers = asyncio.run(bybit.get_tickers())
     df = pd.DataFrame(tickers)
     print(df)
