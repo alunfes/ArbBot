@@ -5,8 +5,10 @@ from collections import Counter
 from OrderbookData import OrderbookData, OrderobookDataList
 from ApexWS import ApexWS
 from BybitWS import BybitWS
+from DydxWS import DydxWS
 from ApexAPI import ApexAPI
 from BybitAPI import BybitAPI
+from DydxAPI import DydxAPI
 from Bot import Bot
 from Params import Params
 from PriceGapCalculator import PriceGapCalculator
@@ -24,7 +26,11 @@ class Application:
         target_base_currencies = self.__detect_common_target_tickers(self.all_tickers.copy())
         #generate ws for target ex
         ws_instances = []
-        ex_ws_funcs = {'apex':ApexWS(target_base_currencies, 5), 'bybit':BybitWS(target_base_currencies, 5)}
+        ex_ws_funcs = {
+            'apex':ApexWS(target_base_currencies, 5), 
+            'bybit':BybitWS(target_base_currencies, 5),
+            'dydx':DydxWS(target_base_currencies, 5),
+            }
         ws_tasks = [ex_ws_funcs[ex].start() for ex in self.target_ex_names]
         bot = Bot()
         price_gap_calculator = PriceGapCalculator()
@@ -33,9 +39,6 @@ class Application:
             bot.start(),
             price_gap_calculator.start()
             )
-
-
-
 
 
     async def __get_all_tickers(self):
@@ -49,6 +52,10 @@ class Application:
                 api = BybitAPI()
                 self.all_tickers['bybit'] = await api.get_tickers()
                 pd.DataFrame(self.all_tickers['bybit']).to_csv('Data/tickers/bybit_tickers.csv')
+            elif ex == 'dydx':
+                api = DydxAPI()
+                self.all_tickers['dydx'] = await api.get_tickers()
+                pd.DataFrame(self.all_tickers['dydx']).to_csv('Data/tickers/dydx_tickers.csv')
             else:
                 print('Invalid exchange !', ex)
 
@@ -66,5 +73,6 @@ class Application:
 
 
 if __name__ == '__main__':
-    app = Application(['apex','bybit'])
+    #app = Application(['apex','bybit', 'dydx'])
+    app = Application(['bybit', 'dydx'])
     asyncio.run(app.start())

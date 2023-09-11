@@ -23,7 +23,7 @@ class BybitAPI:
                 tickers = []
                 for details in resp['result']['list']:
                     if details['status'] == 'Trading' and details['quoteCoin'] == 'USDT':
-                        tickers.append(details)    
+                        tickers.append(details)
                 sorted_tickers = sorted(tickers, key=lambda x: x['symbol'])
                 for ticker in sorted_tickers:
                     symbols.append(ticker['symbol'])

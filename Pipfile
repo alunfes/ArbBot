@@ -4,15 +4,14 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-pandas = "*"
-numpy = "*"
-pip = "*"
-install = "*"
-apexpro = "*"
 pybit = "*"
+dydx-v3-python = "*"
+apexpro = "*"
+pandas = "*"
+aiohttp = "*"
+web3 = "*"
 
 [dev-packages]
 
 [requires]
-python_version = "3.11"
-python_full_version = "3.11.5"
+python_version = "3.9"

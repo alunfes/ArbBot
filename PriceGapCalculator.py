@@ -61,7 +61,7 @@ class PriceGapCalculator:
         '''
         prices = {} #ex:prices ({'bids':{price:size}, 'asks':{price:size}})
         for ex in ex_names:
-            if str(base_currency+ Params.quotes[ex]) in symbols[ex]:
+            if str(base_currency + Params.quotes[ex]) in symbols[ex]:
                 matched_ind = symbols[ex].index(base_currency + Params.quotes[ex])
                 prices[ex] = OrderobookDataList.get_latest_data(ex, symbols[ex][matched_ind])
                 symbols[ex].pop(matched_ind)

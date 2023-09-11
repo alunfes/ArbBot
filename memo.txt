@@ -1,0 +1,6 @@
+pybit
+dydx-v3-python
+apexpro
+pandas
+aiohttp
+web3
