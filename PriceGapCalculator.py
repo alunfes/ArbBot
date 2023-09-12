@@ -43,11 +43,11 @@ class PriceGapCalculator:
                 #get prices of all same symbols
                 prices = await self.__get_same_symbol_prices(symbol.replace(Params.quotes['bybit'],''), ex_names, symbols)
                 #calc max price gap
-                max_gap_ratio, max_price_ex, min_price_ex, max_bid, min_ask = await self.__calc_price_gap(prices, usdc_usdt)
-                result_dict_list.append({'symbol':symbol, 'max_gap_ratio':max_gap_ratio, 'max_price_ex':max_price_ex, 'max_bid':max_bid, 'min_price_ex':min_price_ex, 'min_ask':min_ask})
-                PriceGapData.add_gap_price(symbol, max_gap_ratio, max_price_ex, min_price_ex, max_bid, min_ask)
-            max_symbol, max_gap, largest_gap_ask, largest_gap_bid, largest_bid_ex, largest_ask_ex = PriceGapData.get_max_gap_data()
-            print('time=', round(time.time()-time_sta,4), 'max_gap_symbol:',max_symbol, ', gap_raio=',max_gap,  ', ask=',largest_gap_ask, ', ask ex=',largest_ask_ex, ', bid=',largest_gap_bid, ', bid ex=',largest_bid_ex)
+                max_gap_ratio, long_ex, short_ex, max_bid, min_ask = await self.__calc_price_gap(prices, usdc_usdt)
+                result_dict_list.append({'symbol':symbol, 'max_gap_ratio':max_gap_ratio, 'long_ex':long_ex, 'long price':min_ask, 'short_ex':short_ex, 'min_bid':max_bid})
+                PriceGapData.add_gap_price(symbol, max_gap_ratio, long_ex, short_ex, max_bid, min_ask)
+            max_symbol, max_gap, largest_long_price, largest_short_price, largest_long_ex, largest_short_ex = PriceGapData.get_max_gap_data()
+            print('time=', round(time.time()-time_sta,4), 'max_gap_symbol:',max_symbol, ', gap_raio=',round(max_gap,6),  ', long price=',largest_long_price, ', long ex=',largest_long_ex, ', short price=',largest_short_price, ', short ex=',largest_short_ex)
             await asyncio.sleep(1)
 
 
@@ -88,11 +88,15 @@ class PriceGapCalculator:
             else:
                 bids.append(list(price['bids'].keys())[0])
                 asks.append(list(price['asks'].keys())[0])
-        max_bid = max(bids)
-        min_ask = min(asks)
-        max_price_ex = ex_names[bids.index(max_bid)]
-        min_price_ex = ex_names[asks.index(min_ask)]
+        #min_bid = min(bids)
+        #max_ask = max(asks)
+        max_bid = max(bids) #short at max bid
+        min_ask = min(asks) #long at min ask
+        long_ex = ex_names[asks.index(min_ask)]
+        short_ex = ex_names[bids.index(max_bid)]
         max_gap_ratio = float((max_bid - min_ask) / ((max_bid + min_ask) * 0.5))
-        return max_gap_ratio, max_price_ex, min_price_ex, max_bid, min_ask
+        #if max_price_ex == min_price_ex:
+        #    print(prices)
+        return max_gap_ratio, long_ex, short_ex, max_bid, min_ask
         
             

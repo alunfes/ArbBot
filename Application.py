@@ -73,6 +73,6 @@ class Application:
 
 
 if __name__ == '__main__':
-    #app = Application(['apex','bybit', 'dydx'])
-    app = Application(['bybit', 'dydx'])
+    app = Application(['apex','bybit', 'dydx'])
+    #app = Application(['bybit', 'dydx'])
     asyncio.run(app.start())
