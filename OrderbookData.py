@@ -4,11 +4,12 @@ import asyncio
 
 
 class OrderbookData:
-    def __init__(self, ex_name, symbol_name) -> None:
+    def __init__(self, ex_name, symbol_name, flg_write_data) -> None:
         self.max_data_size = 50
         self.num_recording_boards = 5
         self.ex_name = ex_name
         self.symbol_name = symbol_name
+        self.flg_write_data = flg_write_data
         self.bids = {} #price:size
         self.asks = {} #price:size
         self.bids_log = {} #ts:bids
@@ -59,16 +60,17 @@ class OrderbookData:
         # Convert to the improved format
         df_combined = pd.concat([df_bids, df_asks], axis=1)
         # Write to CSV
-        if self.flg_created_file:
-            df_combined.to_csv(f'Data/depth/{self.ex_name}_{self.symbol_name}_depth.csv', mode='a', header=False)
-        else:
-            df_combined.to_csv(f'Data/depth/{self.ex_name}_{self.symbol_name}_depth.csv')
-            self.flg_created_file = True
+        if self.flg_write_data:
+            if self.flg_created_file:
+                df_combined.to_csv(f'Data/depth/{self.ex_name}_{self.symbol_name}_depth.csv', mode='a', header=False)
+            else:
+                df_combined.to_csv(f'Data/depth/{self.ex_name}_{self.symbol_name}_depth.csv')
+                self.flg_created_file = True
 
 
 class OrderobookDataList:
     @classmethod
-    def initialize(cls):
+    def initialize(cls, flg_write_data):
         '''
         一番最初に一回だけ実行
         '''
@@ -76,6 +78,7 @@ class OrderobookDataList:
         cls.ex_names = []
         cls.symbol_names = {}#ex_name:symbol_list
         cls._locks = {} #ex-symbol:lock,   dictキーにアクセスする時間がかかるけどlockは個別の変数ごとに並列ができる。
+        cls.flg_write_data = flg_write_data
         cls.lock = threading.RLock()
 
 
@@ -85,7 +88,7 @@ class OrderobookDataList:
         新しいsymbolのデータ取得を開始するときに一回だけ実行
         '''
         with cls.lock:
-            cls.orderbook_data_list[ex_name+'-'+symbol_name] = OrderbookData(ex_name, symbol_name)
+            cls.orderbook_data_list[ex_name+'-'+symbol_name] = OrderbookData(ex_name, symbol_name, cls.flg_write_data)
             if ex_name not in cls.ex_names:
                 cls.ex_names.append(ex_name)
                 cls.symbol_names[ex_name] = [symbol_name]
@@ -99,8 +102,13 @@ class OrderobookDataList:
         #with cls.lock:
         with cls._locks[ex_name+'-'+symbol_name]:
             cls.orderbook_data_list[ex_name+'-'+symbol_name].add_data(bids, asks, ts)
-            #print(bids)
-            #print(asks)
+            if min(asks.keys()) < max(bids.keys()):
+                print('************************************************************')
+                print('max bid price is higher than min ask price!')
+                print(ex_name, symbol_name)
+                print('bids:', bids)
+                print('asks:', asks)
+                print('************************************************************')
     
     @classmethod
     def get_latest_data(cls, ex_name, symbol_name):

@@ -32,6 +32,7 @@ class PriceGapData:
             cls._largest_gap_short_price = cls._short_price[max_symbol]
             cls._largest_gap_long_ex = cls._long_ex[max_symbol]
             cls._largest_gap_short_ex = cls._short_ex[max_symbol]
+            
 
 
     @classmethod

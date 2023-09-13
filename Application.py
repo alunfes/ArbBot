@@ -14,14 +14,15 @@ from Params import Params
 from PriceGapCalculator import PriceGapCalculator
 
 class Application:
-    def __init__(self, target_ex_names):
+    def __init__(self, target_ex_names, flg_write_depth_data:bool):
         self.target_ex_names = target_ex_names
         self.all_tickers = {}
+        self.flg_write_depth_data = flg_write_depth_data
         
         
     async def start(self):
         Params.initialize()
-        OrderobookDataList.initialize()
+        OrderobookDataList.initialize(self.flg_write_depth_data)
         await self.__get_all_tickers()
         target_base_currencies = self.__detect_common_target_tickers(self.all_tickers.copy())
         #generate ws for target ex
@@ -33,7 +34,7 @@ class Application:
             }
         ws_tasks = [ex_ws_funcs[ex].start() for ex in self.target_ex_names]
         bot = Bot()
-        price_gap_calculator = PriceGapCalculator()
+        price_gap_calculator = PriceGapCalculator(True)
         await asyncio.gather(
             *ws_tasks,
             bot.start(),
@@ -73,6 +74,6 @@ class Application:
 
 
 if __name__ == '__main__':
-    app = Application(['apex','bybit', 'dydx'])
+    app = Application(['apex','bybit', 'dydx'], False)
     #app = Application(['bybit', 'dydx'])
     asyncio.run(app.start())

@@ -16,6 +16,9 @@ from OrderbookData import OrderobookDataList
 '''
 websocketsは3.10以上だと以下のエラーが出る。
 As of 3.10, the *loop* parameter was removed from Lock() since it is no longer necessary
+
+deltaの配信が
+
 '''
 
 class DydxWSDataConverter:
@@ -73,8 +76,8 @@ class DydxWSDataConverter:
         flg = False
         if len(delta_bids) > 0:
             tmp_bids = self.bids.copy()
-            delta_bids = {float(price):float(size) for price, size in delta_bids}
-            tmp_bids.update(delta_bids)
+            sorted_delta_bids = {float(price):float(size) for price, size in delta_bids}
+            tmp_bids.update(sorted_delta_bids)
             tmp_bids = {price:size for price, size in tmp_bids.items() if size >0}
             tmp_bids = sorted(tmp_bids.items(), key=lambda x: x[0], reverse=True)
             tmp_bids = dict(tmp_bids[:self.num_recording_boards])
@@ -83,12 +86,12 @@ class DydxWSDataConverter:
                 flg = True
         if len(delta_asks) > 0:
             tmp_asks = self.asks.copy()
-            delta_asks = {float(price):float(size) for price, size in delta_asks}
-            tmp_asks.update(delta_asks)
+            sorted_delta_asks = {float(price):float(size) for price, size in delta_asks}
+            tmp_asks.update(sorted_delta_asks)
             tmp_asks = {price:size for price, size in tmp_asks.items() if size >0}
             tmp_asks = sorted(tmp_asks.items())  # asksは価格が低い順にソート
             tmp_asks = dict(tmp_asks[:self.num_recording_boards])
-            if tmp_asks != self.bids:
+            if tmp_asks != self.asks:
                 self.asks = tmp_asks.copy()
                 flg = True
         return flg
@@ -154,8 +157,9 @@ class DydxWS:
 
 
 if __name__ == '__main__':
+    OrderobookDataList.initialize(False)
     api = DydxAPI()
-    tickers = api.get_tickers()
-    ws = DydxWS([],5)
+    tickers = asyncio.run(api.get_tickers())
+    ws = DydxWS(tickers['base_currency'],5)
     #asyncio.get_event_loop().run_until_complete(ws.start())
-    asyncio.run(ws.start_orderbookdata(list(tickers['symbols'])[:20]))
+    asyncio.run(ws.start())
