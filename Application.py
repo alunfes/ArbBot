@@ -71,8 +71,6 @@ class Application:
 
 
 
-
-
 if __name__ == '__main__':
     app = Application(['apex','bybit', 'dydx'], False)
     #app = Application(['bybit', 'dydx'])

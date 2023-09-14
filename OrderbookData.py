@@ -16,13 +16,30 @@ class OrderbookData:
         self.asks_log = {} #ts:asks
         self.flg_created_file = False
         
-
+    '''
     def fire_and_forget(func):
         def wrapper(*args, **kwargs):
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             return loop.run_in_executor(None, func, *args, *kwargs)
         return wrapper
+    '''
+    
+    
+    def fire_and_forget(func):
+        def wrapper(*args, **kwargs):
+            # 非同期タスクを作成し、スレッドプールを使用
+            loop = asyncio.get_event_loop()
+            future = loop.run_in_executor(None, func, *args, *kwargs)
+            # エラーハンドリングを追加
+            def handle_callback(future):
+                try:
+                    future.result()  # タスクの実行結果を取得
+                except Exception as e:
+                    # ここでエラーハンドリングを行う (例: ログに記録)
+                    print(f"An error occurred: {e}")
+            future.add_done_callback(handle_callback)
+            return wrapper
 
     def add_data(self, bids, asks, ts):
         self.bids = bids
@@ -33,6 +50,7 @@ class OrderbookData:
             self.__write_data(self.bids_log.copy(), self.asks_log.copy())
             self.bids_log = {}
             self.asks_log = {}
+
 
     def get_data(self):
         return {'bids':self.bids.copy(), 'asks':self.asks.copy()}
@@ -80,6 +98,7 @@ class OrderobookDataList:
         cls._locks = {} #ex-symbol:lock,   dictキーにアクセスする時間がかかるけどlockは個別の変数ごとに並列ができる。
         cls.flg_write_data = flg_write_data
         cls.lock = threading.RLock()
+        cls.tmp_flg = 0
 
 
     @classmethod
@@ -109,6 +128,11 @@ class OrderobookDataList:
                 print('bids:', bids)
                 print('asks:', asks)
                 print('************************************************************')
+                cls.tmp_flg += 1
+                if cls.tmp_flg == 5:
+                    print('kita')
+
+
     
     @classmethod
     def get_latest_data(cls, ex_name, symbol_name):
