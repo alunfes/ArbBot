@@ -12,20 +12,42 @@ class OrderbookData:
         self.flg_write_data = flg_write_data
         self.bids = {} #price:size
         self.asks = {} #price:size
+        self._lock_log = threading.RLock()
         self.bids_log = {} #ts:bids
         self.asks_log = {} #ts:asks
         self.flg_created_file = False
         
-    '''
+    
     def fire_and_forget(func):
         def wrapper(*args, **kwargs):
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             return loop.run_in_executor(None, func, *args, *kwargs)
         return wrapper
+    
+
+    def add_bids_log(self, ts, bid):
+        with self._lock_log:
+            self.bids_log[ts] = bid
+    
+    def add_asks_log(self, ts, ask):
+        with self._lock_log:
+            self.asks_log[ts] = ask
+
+
+    def get_bids_log(self):
+        with self._lock_log:
+            tmp = self.bids_log.copy()
+            self.bids_log = {}
+            return tmp
+        
+    def get_asks_log(self):
+        with self._lock_log:
+            tmp = self.asks_log.copy()
+            self.asks_log = {}
+            return tmp
+    
     '''
-    
-    
     def fire_and_forget(func):
         def wrapper(*args, **kwargs):
             # 非同期タスクを作成し、スレッドプールを使用
@@ -40,16 +62,18 @@ class OrderbookData:
                     print(f"An error occurred: {e}")
             future.add_done_callback(handle_callback)
             return wrapper
+    '''
 
     def add_data(self, bids, asks, ts):
         self.bids = bids
         self.asks = asks
-        self.bids_log[ts] = bids
-        self.asks_log[ts] = asks
+        self.add_bids_log(ts, bids)
+        self.add_asks_log(ts, asks)
         if len(self.bids_log) >= self.max_data_size:
-            self.__write_data(self.bids_log.copy(), self.asks_log.copy())
-            self.bids_log = {}
-            self.asks_log = {}
+            bidlog = self.get_bids_log()
+            asklog = self.get_asks_log()
+            self.__write_data(bidlog, asklog)
+
 
 
     def get_data(self):
@@ -121,7 +145,7 @@ class OrderobookDataList:
         #with cls.lock:
         with cls._locks[ex_name+'-'+symbol_name]:
             cls.orderbook_data_list[ex_name+'-'+symbol_name].add_data(bids, asks, ts)
-            if min(asks.keys()) < max(bids.keys()):
+            if min(list(asks.keys())) < max(list(bids.keys())):
                 print('************************************************************')
                 print('max bid price is higher than min ask price!')
                 print(ex_name, symbol_name)

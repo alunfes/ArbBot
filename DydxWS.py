@@ -23,14 +23,22 @@ As of 3.10, the *loop* parameter was removed from Lock() since it is no longer n
 
 別の方法としては、受信したデータは即時板に反映させてデータを記録しておく。
 もし既に反映させたデータよりも前のoffsetのデータを受信した場合は反映済みのデータを元に戻してより古いものから反映させ直す。
+受信-データ記録-処理
 '''
 class DydxWSData:
     def __init__(self, symbol) -> None:
-        self.symbol = ''
+        self.symbol = symbol
         self._lock = threading.RLock()
         self._bid_ask_data = {} #offset:contents
+        self._offset_list = []
         self._latest_offset = 0
     
+    def add_data(self, delta_data):
+        self._offset_list.append(delta_data['contents']['offset'])
+        self._bid_ask_data[delta_data['contents']['offset']] = delta_data['contents']
+
+
+
     def set_data(self, delta_data):
         '''
         データを取得するたびにnext offset値よりも小さいかを確認してflgを立てる。
@@ -50,7 +58,11 @@ class DydxWSData:
         with self._lock:
             return self.bid_ask_data.copy()
     
+
     def get_next_offset_data(self):
+        '''
+
+        '''
         with self._lock:
             if self._flg_next_offset_data_avaialble:
                 self._flg_next_offset_data_avaialble = False
@@ -62,12 +74,19 @@ class DydxWSData:
 
 
 class DydxWSDataConverter:
+    '''
+    contentsデータを追加する。
+    offsetリストを追加する。
+    最新のoffsetよりも大きな値かを確認する。
+    true: add_delta
+    false: detect all target offsets and add_delta for all of them
+    '''
     def __init__(self, symbol, target_base_currencies, num_recording_boards) -> None:
         self.target_base_currencies = target_base_currencies
         self.num_recording_boards = num_recording_boards
         self.symbol = symbol
-        self._bids = {}
-        self._asks = {}
+        self._bids = {} #price:size
+        self._asks = {} #price:size
         self._lock = threading.RLock()
         self._func_lock = threading.RLock()
 
@@ -152,6 +171,10 @@ class DydxWS:
         self.num_recording_boards = num_recording_boards
         self.data_converters = {} #symbol:DydxWSDataConverter
         self.ws_data = {} #symbol:DydxWSData
+        self._contents = {} #offset:contents
+        self._offset_list = []
+        self._last_offset = 0
+        self._num_log_delta = 50
 
 
     async def __callback(self, message):
@@ -162,12 +185,58 @@ class DydxWS:
                 if flg:
                     OrderobookDataList.add_data('dydx', symbol, self.data_converters[symbol].bids.copy(), self.data_converters[symbol].asks.copy(), int(time.time()))
             elif message['type'] == 'channel_data':
-                self.ws_data[message['id']].set_data(message)
+                self.ws_data[symbol].set_data(message)
                 next_offset_data = self.ws_data[symbol].get_next_offset_data()
                 if next_offset_data != None:
                     flg = self.data_converters[symbol].add_delta(next_offset_data['bids'], next_offset_data['asks'])
                     if flg:
                         OrderobookDataList.add_data('dydx', symbol, self.data_converters[symbol].bids.copy(), self.data_converters[symbol].asks.copy(), int(time.time()))
+
+
+    async def __callback2(self, message):
+        '''
+        受信したdeltaデータのoffsetが今まで処理したものよりも大きいことを確認したら板に反映させる。
+        小さい場合は、rollbackとして受信したもの以降記録しているすべてのデータを順に反映させて、データを消す。
+        ・消した後に消したoffsetよりも小さなデータを受信した場合には板が正しく更新できない可能性がある。
+        ->実際にこの現象が起こるためにrollbackで反映させたoffsetもある程度記録しておく必要がある。
+        案1:offsetをリストに記録してsortしてそのうちx個以上のデータはcotents dictから削除する。
+        案2:offsetをリストに記録して
+        
+        '''
+        if message['type'] != 'connected':
+            symbol = message['id']
+            if message['type'] == 'subscribed' and len(message['contents']) > 0: #snapshot
+                flg = self.data_converters[symbol].add_snapshot(message['contents']['bids'], message['contents']['asks'])
+                if flg:
+                    OrderobookDataList.add_data('dydx', symbol, self.data_converters[symbol].bids.copy(), self.data_converters[symbol].asks.copy(), int(time.time()))
+            elif message['type'] == 'channel_data':
+                #record data
+                offset = int(message['contents']['offset'])
+                self._contents[offset] = message['contents']                
+                self._offset_list.append(offset)
+                #check if rollback is needed
+                if offset > self._last_offset:
+                    flg = self.data_converters[symbol].add_delta(self._contents[offset]['bids'], self._contents[offset]['asks'])
+                    if flg:
+                        OrderobookDataList.add_data('dydx', symbol, self.data_converters[symbol].bids.copy(), self.data_converters[symbol].asks.copy(), int(time.time()))
+                else:#roll back
+                    self._offset_list.sort()
+                    start_ind = self._offset_list.index(offset)
+                    for target_offset in self._offset_list[start_ind:]:
+                        contents_data = self._contents[target_offset]
+                        flg = self.data_converters[symbol].add_delta(contents_data['bids'], contents_data['asks'])
+                        if flg:
+                            OrderobookDataList.add_data('dydx', symbol, self.data_converters[symbol].bids.copy(), self.data_converters[symbol].asks.copy(), int(time.time()))                    
+                    #remove old contents data
+                    if len(self._contents) > self._num_log_delta:
+                        #self._contents = {key: value for key, value in self._contents.items() if key in self._offset_list}
+                        for key in self._offset_list[:-self._num_log_delta]:
+                            self._contents.pop(key, None)
+                        self._offset_list = self._offset_list[-self._num_log_delta:]
+                    #print('Rollback done for ', offset)
+                self._last_offset = offset
+
+                
 
 
     async def start(self):
@@ -193,8 +262,7 @@ class DydxWS:
             while True:
                 res = await websocket.recv()
                 res = json.loads(res)
-                #await self.__callback(res)
-                print(res)
+                await self.__callback2(res)
 
 
 
@@ -203,7 +271,7 @@ if __name__ == '__main__':
     OrderobookDataList.initialize(False)
     api = DydxAPI()
     tickers = asyncio.run(api.get_tickers())
-    #ws = DydxWS(tickers['base_currency'],5)
-    ws = DydxWS(['SOL'],5)
+    ws = DydxWS(tickers['base_currency'],5)
+    #ws = DydxWS(['SOL'],5)
     #asyncio.get_event_loop().run_until_complete(ws.start())
     asyncio.run(ws.start())

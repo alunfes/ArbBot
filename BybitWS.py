@@ -70,6 +70,7 @@ class BybitWS:
         self.target_base_currencies = target_base_currencies
         self.num_recording_boards = num_recording_boards
         self.data_converters = {} #symbol:class_instance
+        self.lock = threading.RLock()
     
 
     def __callback_depth(self, message):
@@ -86,7 +87,7 @@ class BybitWS:
         elif message['type'] == 'delta':
             #self.__add_delta(message['data']['b'], message['data']['a'])
             #OrderobookDataList.add_data('bybit', symbol, self.bids.copy(), self.asks.copy(), message['ts'])
-            pass
+            print(message)
         else:
             DisplaySystemMessage.display_error('BybitWS', 'Invalid ws type in Bybit!' + '\r\n'+ 'type='+message['type'])
         
@@ -114,6 +115,6 @@ class BybitWS:
         return tickers
 
 if __name__ == '__main__':
-    OrderobookDataList.initialize()
-    ws = BybitWS(['BTC', 'ETH'], 3)
+    OrderobookDataList.initialize(True)
+    ws = BybitWS(['BTC', 'ETH'], 10)
     asyncio.run(ws.start())
